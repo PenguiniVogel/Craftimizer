@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/12.0.2">
+<Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
     <Authors>Asriel Camora</Authors>
     <Version>2.7.2.1</Version>
@@ -32,6 +32,7 @@
    </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ECommons" Version="3.0.1.6" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Meziantou.Analyzer" Version="2.0.199">
       <PrivateAssets>all</PrivateAssets>
@@ -39,6 +40,7 @@
     </PackageReference>
     <ProjectReference Include="..\Simulator\Craftimizer.Simulator.csproj" />
     <ProjectReference Include="..\Solver\Craftimizer.Solver.csproj" />
+    <PackageReference Update="DalamudPackager" Version="13.0.0" />
   </ItemGroup>
 
 </Project>

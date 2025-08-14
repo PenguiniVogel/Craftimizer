@@ -8,12 +8,12 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Text;
+using Dalamud.Bindings.ImGui;
 
 namespace Craftimizer.Plugin.Windows;
 
@@ -76,7 +76,7 @@ public sealed class Settings : Window, IDisposable
     private static void DrawOption<T>(string label, string tooltip, T value, T min, T max, Action<T> setter, ref bool isDirty) where T : struct, INumber<T>
     {
         ImGui.SetNextItemWidth(OptionWidth);
-        var text = value.ToString();
+        var text = value.ToString() ?? string.Empty;
         if (ImGui.InputText(label, ref text, 8, ImGuiInputTextFlags.AutoSelectAll | ImGuiInputTextFlags.CharsDecimal))
         {
             if (T.TryParse(text, null, out var newValue))

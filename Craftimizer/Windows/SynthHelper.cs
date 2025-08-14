@@ -15,15 +15,17 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using Dalamud.Bindings.ImGui;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using ActionType = Craftimizer.Simulator.Actions.ActionType;
 using Sim = Craftimizer.Simulator.Simulator;
 using SimNoRandom = Craftimizer.Simulator.SimulatorNoRandom;
+using CSRecipeNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote;
 
 namespace Craftimizer.Windows;
 
@@ -64,6 +66,9 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     private SimulatedMacro Macro { get; } = new();
 
     private BackgroundTask<int>? SolverTask { get; set; }
+    private BackgroundTask<int>? WaitTask { get; set; }
+    private int CurrentStepNr { get; set; }
+    private int LastStepNr { get; set; }
     private bool SolverRunning => (!SolverTask?.Completed) ?? false;
     private Solver.Solver? SolverObject { get; set; }
 
@@ -148,10 +153,11 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         WasCalculatable = ShouldCalculate;
     }
 
-    public override bool DrawConditions() =>
-        ShouldOpen;
+    public override bool DrawConditions() => ShouldOpen;
 
     private bool wasInCraftAction;
+    private bool isCrafting;
+    
     private bool CalculateShouldOpen()
     {
         if (Service.ClientState.LocalPlayer == null)
@@ -160,24 +166,39 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         if (!Service.Configuration.EnableSynthHelper)
             return false;
 
-        var recipeId = CSRecipeNote.Instance()->ActiveCraftRecipeId;
+        var instance = CSRecipeNote.Instance();
 
-        if (recipeId == 0)
+        var list = instance->RecipeList;
+        CSRecipeNote.RecipeEntry* recipeEntry = null;
+        if (list != null)
         {
-            RecipeData = null;
-            return false;
+            recipeEntry = list->SelectedRecipe;
+            if (recipeEntry != null)
+            {
+                var recipeId = recipeEntry->RecipeId;
+
+                if (recipeId != 0)
+                {
+                    isCrafting = false;
+                    RecipeData = new RecipeData(recipeId, recipeEntry);
+                }
+            }
         }
 
-        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis");
+        if (RecipeData == null)
+            return false;
+
+        var baseAddon = Service.GameGui.GetAddonByName("Synthesis");
+        Addon = (AddonSynthesis*)baseAddon.Address;
 
         if (Addon == null)
         {
-            RecipeData = null;
+            // RecipeData = null;
             return false;
         }
 
         // Check if Synthesis addon is visible
-        if (Addon->AtkUnitBase.WindowNode == null)
+        if (!baseAddon.IsReady || !baseAddon.IsVisible)
             return false;
 
         if (Service.Configuration.DisableSynthHelperOnMacro)
@@ -194,14 +215,15 @@ public sealed unsafe class SynthHelper : Window, IDisposable
                         break;
                     }
                 }
+                
                 if (!hasCraftAction)
                     return false;
             }
         }
 
-        if (RecipeData?.RecipeId != recipeId)
+        if (!isCrafting)
         {
-            OnStartCrafting(recipeId);
+            OnStartCrafting();
             OnStateUpdated();
         }
 
@@ -210,9 +232,10 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
         Macro.FlushQueue();
 
-        var isInCraftAction = Service.Condition[ConditionFlag.Crafting40];
+        var isInCraftAction = Service.Condition[ConditionFlag.ExecutingCraftingAction];
         if (!isInCraftAction && wasInCraftAction)
             RefreshCurrentState();
+        
         wasInCraftAction = isInCraftAction;
 
         return true;
@@ -289,10 +312,10 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     {
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         var imageSize = ImGui.GetFrameHeight() * 2;
-        var canExecute = !Service.Condition[ConditionFlag.Crafting40];
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
         var lastState = Macro.InitialState;
         hoveredState = null;
-
+        
         var itemsPerRow = (int)Math.Max(1, MathF.Floor((ImGui.GetContentRegionAvail().X + spacing) / (imageSize + spacing)));
 
         using var _color = ImRaii.PushColor(ImGuiCol.Button, Vector4.Zero);
@@ -337,6 +360,30 @@ public sealed unsafe class SynthHelper : Window, IDisposable
                 if (ExecuteNextAction())
                     break;
             }
+
+            if (LastStepNr < CurrentStepNr)
+            {
+                if (canExecute && i == 0)
+                {
+                    LastStepNr = CurrentStepNr;
+                    NewWaitTask();
+                }
+            }
+            
+            if (canExecute && i == 0 && LastStepNr == CurrentStepNr)
+            {
+                // automatically complete next action, with a 150 - 250 ms delay
+                if (WaitTask is { Completed: true })
+                {
+                    if (ExecuteNextAction())
+                    {
+                        CurrentStepNr += 1;
+                        
+                        break;
+                    }
+                }
+            }
+            
             if (isHovered)
             {
                 ImGuiUtils.Tooltip($"{action.GetName(RecipeData!.ClassJob)}\n" +
@@ -476,7 +523,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
     public bool ExecuteNextAction()
     {
-        var canExecute = !Service.Condition[ConditionFlag.Crafting40];
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
         var action = NextAction;
         if (canExecute && action != null)
         {
@@ -492,14 +539,40 @@ public sealed unsafe class SynthHelper : Window, IDisposable
             CalculateBestMacro();
     }
 
-    private void OnStartCrafting(ushort recipeId)
+    private void OnStartCrafting()
     {
-        var shouldUpdateInput = false;
-        if (recipeId != RecipeData?.RecipeId)
+        ArgumentNullException.ThrowIfNull(RecipeData);
+
         {
-            RecipeData = new(recipeId);
-            shouldUpdateInput = true;
+            var RecipeId = RecipeData.RecipeId;
+            var AdjustedJobLevel = RecipeData.AdjustedJobLevel;
+            var classJob = RecipeData.ClassJob;
+            var CollectableThresholds = RecipeData.CollectableThresholds;
+            var Ingredients = RecipeData.Ingredients;
+            var IsCollectable = RecipeData.IsCollectable;
+            var MaxStartingQuality = RecipeData.MaxStartingQuality;
+            var Recipe = RecipeData.Recipe;
+            var RecipeEntryPtr = RecipeData.RecipeEntryPtr;
+            var RecipeInfo = RecipeData.RecipeInfo;
+            {
+                var MaxQuality = RecipeInfo.MaxQuality;
+            }
+            var Table = RecipeData.Table;
+            
+            var holdHere = 1;
         }
+        
+        isCrafting = true;
+        LastStepNr = 0;
+        CurrentStepNr = 0;
+        NewWaitTask();
+        
+        var shouldUpdateInput = false;
+        /*if (recipeId != RecipeData?.RecipeId)
+        {
+            RecipeData = new(recipeId, recipeEntryPtr);
+            shouldUpdateInput = true;
+        }*/
 
         {
             var gearStats = Gearsets.CalculateGearsetCurrentStats();
@@ -528,7 +601,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
     private void OnUseAction(ActionType action)
     {
-        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis");
+        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis").Address;
         if (Addon == null)
             return;
         if (Addon->AtkUnitBase.WindowNode == null)
@@ -553,13 +626,16 @@ public sealed unsafe class SynthHelper : Window, IDisposable
             foreach (var status in statusManager->Status)
                 if (status.StatusId == id)
                     return (byte)status.Param;
+            
             return 0;
         }
+        
         bool HasEffect(ushort id)
         {
             foreach (var status in statusManager->Status)
                 if (status.StatusId == id)
                     return true;
+            
             return false;
         }
 
@@ -634,7 +710,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
         var solver = new Solver.Solver(config, state) { Token = token };
         solver.OnLog += Log.Debug;
-        solver.OnWarn += t => Service.Plugin.DisplaySolverWarning(t);
+        solver.OnWarn += t => Plugin.Plugin.DisplaySolverWarning(t);
         solver.OnNewAction += EnqueueAction;
         SolverObject = solver;
         solver.Start();
@@ -663,4 +739,19 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
         AxisFont.Dispose();
     }
+
+    private void NewWaitTask()
+    {
+        if (WaitTask is null or { Completed: true })
+        {
+            WaitTask = new(_ =>
+            {
+                Thread.Sleep(Random.Shared.Next(150, 250));
+                return 0;
+            });
+            
+            WaitTask.Start();
+        }
+    }
+    
 }

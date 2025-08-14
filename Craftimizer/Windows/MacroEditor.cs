@@ -12,7 +12,6 @@ using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,6 +24,8 @@ using SimNoRandom = Craftimizer.Simulator.SimulatorNoRandom;
 using Recipe = Lumina.Excel.Sheets.Recipe;
 using Dalamud.Utility;
 using Craftimizer.Solver;
+using Dalamud.Bindings.ImGui;
+using CSRecipeNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote;
 
 namespace Craftimizer.Windows;
 
@@ -719,6 +720,10 @@ public sealed class MacroEditor : Window, IDisposable
 
         public bool Equals(RecipeWrapper other) =>
             Recipe.RowId == other.Recipe.RowId;
+        
+        public override bool Equals(object? obj) => obj is RecipeWrapper other && Equals(other);
+
+        public override int GetHashCode() => StringComparer.Ordinal.GetHashCode($"{Recipe.RowId}{Recipe.Number}{Recipe.PatchNumber}{Recipe.IsExpert}{Recipe.CanHq}");
     }
 
     private readonly List<RecipeWrapper> searchableRecipes = LuminaSheets.RecipeSheet.Where(r => r.RecipeLevelTable.RowId != 0 && r.ItemResult.RowId != 0).Select(r => new RecipeWrapper(r)).ToList();
@@ -768,6 +773,7 @@ public sealed class MacroEditor : Window, IDisposable
         ImGui.SameLine(0, 5);
 
         ushort? newRecipe = null;
+        ulong? newRecipeEntryPtr = null;
         {
             var recipe = new RecipeWrapper(RecipeData.Recipe);
             using var lockedFontHandle = AxisFont.Available ? AxisFont.Lock() : null;
@@ -808,6 +814,7 @@ public sealed class MacroEditor : Window, IDisposable
                 }))
             {
                 newRecipe = (ushort)recipe.Recipe.RowId;
+                newRecipeEntryPtr = RecipeData.RecipeEntryPtr;
             }
         }
 
@@ -923,16 +930,22 @@ public sealed class MacroEditor : Window, IDisposable
 
         if (newAdjustedJobLevel is { } jobLevel)
         {
-            RecipeData = new((ushort)RecipeData.Recipe.RowId, jobLevel);
-            modified = true;
+            unsafe
+            {
+                RecipeData = new((ushort)RecipeData.Recipe.RowId, (FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote.RecipeEntry*)RecipeData.RecipeEntryPtr, jobLevel);
+                modified = true;
+            }
         }
 
         if (newRecipe is { } recipeId)
         {
-            RecipeData = new(recipeId, RecipeData.AdjustedJobLevel);
-            HQIngredientCounts.Clear();
-            HQIngredientCounts.AddRange(Enumerable.Repeat(0, RecipeData.Ingredients.Count));
-            modified = true;
+            unsafe
+            {
+                RecipeData = new(recipeId, (FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote.RecipeEntry*)newRecipeEntryPtr.Value, RecipeData.AdjustedJobLevel);
+                HQIngredientCounts.Clear();
+                HQIngredientCounts.AddRange(Enumerable.Repeat(0, RecipeData.Ingredients.Count));
+                modified = true;
+            }
         }
 
         if (oldStartingQuality != StartingQuality)
@@ -997,20 +1010,20 @@ public sealed class MacroEditor : Window, IDisposable
     }
 
     private const int MAX_LEVEL = 100;
-    private float GetLevelEntryWidth()
+    private static float GetLevelEntryWidth()
     {
         var levelTextWidth = ImGui.CalcTextSize(SqText.ToLevelString(MAX_LEVEL)).X + ImGui.GetStyle().FramePadding.X * 2 + 5;
         return ImGui.CalcTextSize(SqText.LevelPrefix.ToIconString()).X + 5 + levelTextWidth;
     }
     
-    private bool DrawLevelEntry(ref int level)
+    private static bool DrawLevelEntry(ref int level)
     {
-        static unsafe int LevelInputCallback(ImGuiInputTextCallbackData* data)
+        static unsafe int LevelInputCallback(ImGuiInputTextCallbackDataPtr data)
         {
-            if (data->EventFlag == ImGuiInputTextFlags.CallbackCharFilter)
+            if (data.EventFlag == ImGuiInputTextFlags.CallbackCharFilter)
             {
-                if (SqText.LevelNumReplacements.TryGetValue((char)data->EventChar, out var seChar))
-                    data->EventChar = seChar.ToIconChar();
+                if (SqText.LevelNumReplacements.TryGetValue((char)data.EventChar, out var seChar))
+                    data.EventChar = seChar.ToIconChar();
                 else
                     return 1;
             }
@@ -1563,7 +1576,7 @@ public sealed class MacroEditor : Window, IDisposable
                         foreach (var action in parsedActions)
                             AddStep(action);
 
-                        Service.Plugin.DisplayNotification(new()
+                        Plugin.Plugin.DisplayNotification(new()
                         {
                             Content = $"Imported macro with {parsedActions.Count} step{(parsedActions.Count != 1 ? "s" : "")}",
                             MinimizedText = $"Imported {parsedActions.Count} step macro",
@@ -1619,7 +1632,7 @@ public sealed class MacroEditor : Window, IDisposable
                     Macro.Clear();
                     foreach (var action in actions)
                         AddStep(action);
-                    Service.Plugin.DisplayNotification(new()
+                    Plugin.Plugin.DisplayNotification(new()
                     {
                         Content = $"Imported macro \"{name}\"",
                         Title = "Macro Imported",
@@ -1670,7 +1683,7 @@ public sealed class MacroEditor : Window, IDisposable
 
         var solver = new Solver.Solver(config, state) { Token = token };
         solver.OnLog += Log.Debug;
-        solver.OnWarn += t => Service.Plugin.DisplaySolverWarning(t);
+        solver.OnWarn += t => Plugin.Plugin.DisplaySolverWarning(t);
         solver.OnNewAction += a => Macro.Enqueue(a);
         solver.OnSuggestSolution += a => Macro.EnqueueEphemeral(a.Actions);
         SolverObject = solver;

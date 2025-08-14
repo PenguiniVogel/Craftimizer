@@ -1,8 +1,8 @@
 using Dalamud.Interface.Utility.Raii;
-using ImGuiNET;
-using ImPlotNET;
 using System;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Bindings.ImPlot;
 
 namespace Craftimizer.Plugin;
 

@@ -30,7 +30,8 @@ public sealed class Service
     [PluginService] public static IGameInteropProvider GameInteropProvider { get; private set; }
     [PluginService] public static INotificationManager NotificationManager { get; private set; }
     [PluginService] public static ISeStringEvaluator SeStringEvaluator { get; private set; }
-
+    [PluginService] public static IChatGui Chat { get; private set; }
+    
     public static Plugin Plugin { get; private set; }
     public static Configuration Configuration => Plugin.Configuration;
     public static IconManager IconManager => Plugin.IconManager;

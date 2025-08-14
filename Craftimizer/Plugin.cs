@@ -82,21 +82,24 @@ public sealed class Plugin : IDalamudPlugin
 
     public (CharacterStats Character, RecipeData Recipe, MacroEditor.CrafterBuffs Buffs) GetDefaultStats()
     {
-        var stats = GetOpenedStats();
-        return (
-            stats.Character ?? new()
-            {
-                Craftsmanship = 100,
-                Control = 100,
-                CP = 200,
-                Level = 10,
-                CanUseManipulation = false,
-                HasSplendorousBuff = false,
-                IsSpecialist = false,
-            },
-            stats.Recipe ?? new(1023),
-            stats.Buffs ?? new(null)
-        );
+        unsafe
+        {
+            var stats = GetOpenedStats();
+            return (
+                       stats.Character ?? new()
+                       {
+                           Craftsmanship = 100,
+                           Control = 100,
+                           CP = 200,
+                           Level = 10,
+                           CanUseManipulation = false,
+                           HasSplendorousBuff = false,
+                           IsSpecialist = false,
+                       },
+                       stats.Recipe ?? new(1023),
+                       stats.Buffs ?? new(null)
+                   );
+        }
     }
 
     [Command(name: "/crafteditor", aliases: "/macroeditor", description: "Open the crafting macro editor.")]
@@ -143,7 +146,7 @@ public sealed class Plugin : IDalamudPlugin
         ListWindow.BringToFront();
     }
 
-    public void OpenCraftingLog()
+    public static void OpenCraftingLog()
     {
         Chat.SendMessage("/craftinglog");
     }
@@ -154,7 +157,7 @@ public sealed class Plugin : IDalamudPlugin
         ClipboardWindow = new(macros);
     }
 
-    public IActiveNotification DisplaySolverWarning(string text) =>
+    public static IActiveNotification DisplaySolverWarning(string text) =>
         DisplayNotification(new()
         {
             Content = text,
@@ -162,7 +165,7 @@ public sealed class Plugin : IDalamudPlugin
             Type = NotificationType.Warning
         });
 
-    public IActiveNotification DisplayNotification(Notification notification)
+    public static IActiveNotification DisplayNotification(Notification notification)
     {
         var ret = Service.NotificationManager.AddNotification(notification);
         // ret.SetIconTexture(Icon.RentAsync().ContinueWith(t => (IDalamudTextureWrap?)t));

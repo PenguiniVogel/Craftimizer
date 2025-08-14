@@ -20,13 +20,13 @@ using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Dalamud.Bindings.ImGui;
 using ActionType = Craftimizer.Simulator.Actions.ActionType;
 using ClassJob = Craftimizer.Simulator.ClassJob;
 using CSRecipeNote = FFXIVClientStructs.FFXIV.Client.Game.UI.RecipeNote;
@@ -194,7 +194,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
         bool ShouldUseRecipeNote()
         {
-            Addon = (AtkUnitBase*)Service.GameGui.GetAddonByName("RecipeNote");
+            Addon = (AtkUnitBase*)Service.GameGui.GetAddonByName("RecipeNote").Address;
             if (Addon == null)
                 return false;
 
@@ -211,7 +211,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
         bool ShouldUseWKSRecipeNote()
         {
-            Addon = (AtkUnitBase*)Service.GameGui.GetAddonByName("WKSRecipeNotebook");
+            Addon = (AtkUnitBase*)Service.GameGui.GetAddonByName("WKSRecipeNotebook").Address;
             if (Addon == null)
                 return false;
 
@@ -248,7 +248,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
             var recipeId = recipeEntry->RecipeId;
             if (recipeId != RecipeData?.RecipeId)
             {
-                RecipeData = new(recipeId);
+                RecipeData = new(recipeId, recipeEntry);
                 StatsChanged = true;
             }
         }
@@ -1108,12 +1108,12 @@ public sealed unsafe class RecipeNote : Window, IDisposable
             ImGui.TableNextColumn();
             ImGui.TextUnformatted("Current");
             ImGui.TableNextColumn();
-            ImGui.TextColored(new(0, 1, 0, 1), $"{current}");
+            ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(0, 1, 0, 1)), $"{current}");
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted("Required");
             ImGui.TableNextColumn();
-            ImGui.TextColored(new(1, 0, 0, 1), $"{required}");
+            ImGui.TextColored(ImGui.ColorConvertFloat4ToU32(new(1, 0, 0, 1)), $"{required}");
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted("You need");
@@ -1252,7 +1252,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
             var solver = new Solver.Solver(config, state) { Token = token };
             solver.OnLog += Log.Debug;
-            solver.OnWarn += t => Service.Plugin.DisplaySolverWarning(t);
+            solver.OnWarn += t => Plugin.Plugin.DisplaySolverWarning(t);
             BestMacroSolver = solver;
             solver.Start();
             var solution = solver.GetTask().GetAwaiter().GetResult();

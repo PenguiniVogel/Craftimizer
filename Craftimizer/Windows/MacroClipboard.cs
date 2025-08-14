@@ -2,11 +2,11 @@ using Craftimizer.Plugin;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ImGuiNotification;
 
 namespace Craftimizer.Windows;
@@ -58,7 +58,7 @@ public sealed class MacroClipboard : Window, IDisposable
                 ImGui.SetClipboardText(macro);
                 if (Service.Configuration.MacroCopy.ShowCopiedMessage)
                 {
-                    Service.Plugin.DisplayNotification(new()
+                    Plugin.Plugin.DisplayNotification(new()
                     {
                         Content = Macros.Count == 1 ? "Copied macro to clipboard." : $"Copied macro {idx + 1} to clipboard.",
                         MinimizedText = Macros.Count == 1 ? "Copied macro" : $"Copied macro {idx + 1}",
@@ -77,7 +77,7 @@ public sealed class MacroClipboard : Window, IDisposable
             using var padding = ImRaii.PushStyle(ImGuiStyleVar.FramePadding, Vector2.Zero);
             using var bg = ImRaii.PushColor(ImGuiCol.FrameBg, Vector4.Zero);
             var lineCount = macro.Count(c => c == '\n') + 1;
-            ImGui.InputTextMultiline("", ref macro, (uint)macro.Length + 1, new(availWidth, ImGui.GetTextLineHeight() * Math.Max(15, lineCount) + ImGui.GetStyle().FramePadding.Y), ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AutoSelectAll);
+            ImGui.InputTextMultiline("", ref macro, macro.Length + 1, new(availWidth, ImGui.GetTextLineHeight() * Math.Max(15, lineCount) + ImGui.GetStyle().FramePadding.Y), ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AutoSelectAll);
         }
 
         if (buttonHovered)

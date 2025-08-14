@@ -3,13 +3,13 @@ using Craftimizer.Utils;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
 using System;
 using Craftimizer.Simulator;
 using Craftimizer.Simulator.Actions;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Sim = Craftimizer.Simulator.SimulatorNoRandom;
 using Dalamud.Interface.Utility;
 using Dalamud.Utility;
@@ -23,7 +23,7 @@ public sealed class MacroList : Window, IDisposable
     public CharacterStats? CharacterStats { get; private set; }
     public RecipeData? RecipeData { get; private set; }
 
-    private IReadOnlyList<Macro> Macros => Service.Configuration.Macros;
+    private static IReadOnlyList<Macro> Macros => Service.Configuration.Macros;
     private Dictionary<Macro, SimulationState> MacroStateCache { get; } = [];
 
     public MacroList() : base("Craftimizer Macro List", WindowFlags, false)
@@ -129,7 +129,7 @@ public sealed class MacroList : Window, IDisposable
             ImGuiUtils.TextCentered(text2);
             ImGuiUtils.AlignCentered(buttonRowWidth);
             if (ImGui.Button(text3))
-                Service.Plugin.OpenCraftingLog();
+                Plugin.Plugin.OpenCraftingLog();
             ImGui.SameLine();
             if (ImGui.Button(text4))
                 OpenEditor(null);
@@ -350,13 +350,13 @@ public sealed class MacroList : Window, IDisposable
         isUnsorted = false;
         var matcher = new FuzzyMatcher(searchText.ToLowerInvariant(), MatchMode.FuzzyParts);
         var query = Macros.AsParallel().Select(i => (Item: i, Score: matcher.Matches(i.Name.ToLowerInvariant())))
-            .Where(t => t.Score > 0)
-            .OrderByDescending(t => t.Score)
-            .Select(t => t.Item);
+                          .Where(t => t.Score > 0)
+                          .OrderByDescending(t => t.Score)
+                          .Select(t => t.Item);
         sortedMacros = [.. query];
     }
 
-    private void OpenEditor(Macro? macro)
+    private static void OpenEditor(Macro? macro)
     {
         var stats = Service.Plugin.GetDefaultStats();
         Service.Plugin.OpenMacroEditor(stats.Character, stats.Recipe, stats.Buffs, null, macro?.Actions ?? Enumerable.Empty<ActionType>(), macro != null ? (actions => { macro.ActionEnumerable = actions; Service.Configuration.Save(); }) : null);
