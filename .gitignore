@@ -3,3 +3,5 @@ obj/
 bin/
 *.user
 BenchmarkDotNet.Artifacts/
+ECommons/
+.idea/

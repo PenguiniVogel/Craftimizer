@@ -12,7 +12,6 @@ using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,6 +24,7 @@ using SimNoRandom = Craftimizer.Simulator.SimulatorNoRandom;
 using Recipe = Lumina.Excel.Sheets.Recipe;
 using Dalamud.Utility;
 using Craftimizer.Solver;
+using Dalamud.Bindings.ImGui;
 
 namespace Craftimizer.Windows;
 
@@ -1005,12 +1005,12 @@ public sealed class MacroEditor : Window, IDisposable
     
     private bool DrawLevelEntry(ref int level)
     {
-        static unsafe int LevelInputCallback(ImGuiInputTextCallbackData* data)
+        static unsafe int LevelInputCallback(ImGuiInputTextCallbackDataPtr data)
         {
-            if (data->EventFlag == ImGuiInputTextFlags.CallbackCharFilter)
+            if (data.EventFlag == ImGuiInputTextFlags.CallbackCharFilter)
             {
-                if (SqText.LevelNumReplacements.TryGetValue((char)data->EventChar, out var seChar))
-                    data->EventChar = seChar.ToIconChar();
+                if (SqText.LevelNumReplacements.TryGetValue((char)data.EventChar, out var seChar))
+                    data.EventChar = seChar.ToIconChar();
                 else
                     return 1;
             }

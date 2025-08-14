@@ -15,12 +15,12 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Shell;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using Dalamud.Bindings.ImGui;
 using ActionType = Craftimizer.Simulator.Actions.ActionType;
 using Sim = Craftimizer.Simulator.Simulator;
 using SimNoRandom = Craftimizer.Simulator.SimulatorNoRandom;
@@ -168,7 +168,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
             return false;
         }
 
-        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis");
+        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis").Address;
 
         if (Addon == null)
         {
@@ -210,7 +210,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
         Macro.FlushQueue();
 
-        var isInCraftAction = Service.Condition[ConditionFlag.Crafting40];
+        var isInCraftAction = Service.Condition[ConditionFlag.ExecutingCraftingAction];
         if (!isInCraftAction && wasInCraftAction)
             RefreshCurrentState();
         wasInCraftAction = isInCraftAction;
@@ -289,7 +289,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     {
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         var imageSize = ImGui.GetFrameHeight() * 2;
-        var canExecute = !Service.Condition[ConditionFlag.Crafting40];
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
         var lastState = Macro.InitialState;
         hoveredState = null;
 
@@ -476,7 +476,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
     public bool ExecuteNextAction()
     {
-        var canExecute = !Service.Condition[ConditionFlag.Crafting40];
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
         var action = NextAction;
         if (canExecute && action != null)
         {
@@ -528,7 +528,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
     private void OnUseAction(ActionType action)
     {
-        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis");
+        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis").Address;
         if (Addon == null)
             return;
         if (Addon->AtkUnitBase.WindowNode == null)

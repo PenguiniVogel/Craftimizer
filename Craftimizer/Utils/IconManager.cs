@@ -8,6 +8,7 @@ using System.Numerics;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Bindings.ImGui;
 
 namespace Craftimizer.Utils;
 
@@ -19,7 +20,7 @@ public interface ITextureIcon
 
     float? AspectRatio => Dimensions is { } d ? d.X / d.Y : null;
 
-    nint ImGuiHandle { get; }
+    ImTextureID ImGuiHandle { get; }
 }
 
 public interface ILoadedTextureIcon : ITextureIcon, IDisposable { }
@@ -32,7 +33,7 @@ public sealed class IconManager : IDisposable
 
         public Vector2? Dimensions => GetWrap()?.Size;
 
-        public nint ImGuiHandle => GetWrapOrEmpty().ImGuiHandle;
+        public ImTextureID ImGuiHandle => GetWrapOrEmpty().Handle;
 
         private Task<IDalamudTextureWrap> TextureWrapTask { get; }
         private CancellationTokenSource DisposeToken { get; }
@@ -69,7 +70,7 @@ public sealed class IconManager : IDisposable
 
         public Vector2? Dimensions => Base.Dimensions;
 
-        public nint ImGuiHandle => Base.ImGuiHandle;
+        public ImTextureID ImGuiHandle => Base.ImGuiHandle;
 
         public void Release()
         {

@@ -5,9 +5,9 @@ using Dalamud.Interface.ImGuiNotification;
 using FFXIVClientStructs.FFXIV.Client.System.Memory;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
-using ImGuiNET;
 using System;
 using System.Collections.Generic;
+using Dalamud.Bindings.ImGui;
 
 namespace Craftimizer.Utils;
 
