@@ -35,12 +35,8 @@ namespace Craftimizer.Windows;
 
 public sealed unsafe class RecipeNote : Window, IDisposable
 {
-    private const ImGuiWindowFlags WindowFlagsPinned = WindowFlagsFloating
-      | ImGuiWindowFlags.NoSavedSettings;
-
-    private const ImGuiWindowFlags WindowFlagsFloating =
-        ImGuiWindowFlags.AlwaysAutoResize
-      | ImGuiWindowFlags.NoFocusOnAppearing;
+    private const ImGuiWindowFlags WindowFlagsPinned = WindowFlagsFloating | ImGuiWindowFlags.NoSavedSettings;
+    private const ImGuiWindowFlags WindowFlagsFloating = ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoFocusOnAppearing;
 
     private const string WindowNamePinned = "Craftimizer Crafting Log Helper###CraftimizerRecipeNote";
     private const string WindowNameFloating = $"{WindowNamePinned}Floating";
@@ -248,6 +244,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
             var recipeId = recipeEntry->RecipeId;
             if (recipeId != RecipeData?.RecipeId)
             {
+                RecipeData.LastRecipeEntry = new(recipeEntry);
                 RecipeData = new(recipeId);
                 StatsChanged = true;
             }
@@ -459,6 +456,12 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
         {
             var macroTaskResult = SuggestedMacroTask?.Result;
+
+            if (SuggestedMacroTask?.Completed ?? false)
+            {
+                RecipeData.SuggestedMacro = macroTaskResult;
+            }
+            
             var state = new MacroTaskState()
             {
                 Type = MacroTaskType.Suggested,
@@ -780,20 +783,40 @@ public sealed unsafe class RecipeNote : Window, IDisposable
             ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 100 * ImGuiHelpers.GlobalScale);
             ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthStretch);
 
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted("Progress");
-            ImGui.TableNextColumn();
-            ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxProgress}");
+            if (RecipeData.LastRecipeEntry != null)
+            {
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Progress");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Difficulty}");
 
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted("Quality");
-            ImGui.TableNextColumn();
-            ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxQuality}");
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Quality");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Quality}");
 
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted("Durability");
-            ImGui.TableNextColumn();
-            ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxDurability}");
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Durability");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Durability}");
+            }
+            else
+            {
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Progress");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxProgress}");
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Quality");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxQuality}");
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted("Durability");
+                ImGui.TableNextColumn();
+                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxDurability}");
+            }
         }
     }
 
@@ -919,6 +942,7 @@ public sealed unsafe class RecipeNote : Window, IDisposable
                         ImGuiUtils.AlignMiddle(calcTextSize, new(calcTextSize.X, windowHeight));
                         ImGui.TextUnformatted("Calculating...");
                         ImGui.SetCursorPos(c + new Vector2(0, windowHeight + ImGui.GetStyle().ItemSpacing.Y - 1));
+                        
                         break;
                     }
                 case MacroTaskType.Community:
@@ -942,7 +966,6 @@ public sealed unsafe class RecipeNote : Window, IDisposable
                     ImGuiUtils.TextMiddleNewLine("You have no macros!", new(ImGui.GetContentRegionAvail().X - stepsAvailWidthOffset, windowHeight + 1));
                     break;
                 case MacroTaskType.Suggested:
-                    // Cancelled?
                     break;
                 case MacroTaskType.Community:
                     ImGuiUtils.TextMiddleNewLine("No macros found!", new(ImGui.GetContentRegionAvail().X - stepsAvailWidthOffset, windowHeight + 1));
@@ -966,131 +989,139 @@ public sealed unsafe class RecipeNote : Window, IDisposable
                     ImGuiUtils.TextCentered(macroName, panelWidth);
             }
 
-            using var table = ImRaii.Table("table", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame);
-            if (table)
+            using (var table = ImRaii.Table("table", 3, ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.SizingStretchSame))
             {
-                ImGui.TableSetupColumn("desc", ImGuiTableColumnFlags.WidthFixed, 0);
-                ImGui.TableSetupColumn("actions", ImGuiTableColumnFlags.WidthFixed, 0);
-                ImGui.TableSetupColumn("steps", ImGuiTableColumnFlags.WidthStretch);
-
-                ImGui.TableNextRow(ImGuiTableRowFlags.None, windowHeight);
-                ImGui.TableNextColumn();
-
-                var spacing = ImGui.GetStyle().ItemSpacing.Y;
-                var miniRowHeight = (windowHeight - spacing) / 2f;
-
+                if (table)
                 {
-                    if (Service.Configuration.ShowOptimalMacroStat)
+                    ImGui.TableSetupColumn("desc", ImGuiTableColumnFlags.WidthFixed, 0);
+                    ImGui.TableSetupColumn("actions", ImGuiTableColumnFlags.WidthFixed, 0);
+                    ImGui.TableSetupColumn("steps", ImGuiTableColumnFlags.WidthStretch);
+
+                    ImGui.TableNextRow(ImGuiTableRowFlags.None, windowHeight);
+                    ImGui.TableNextColumn();
+
+                    var spacing = ImGui.GetStyle().ItemSpacing.Y;
+                    var miniRowHeight = (windowHeight - spacing) / 2f;
+
                     {
-                        var progressHeight = windowHeight;
-                        if (simState.Progress >= simState.Input.Recipe.MaxProgress && simState.Input.Recipe.MaxQuality > 0)
+                        if (Service.Configuration.ShowOptimalMacroStat)
                         {
-                            ImGuiUtils.ArcProgress(
-                            (float)simState.Quality / simState.Input.Recipe.MaxQuality,
-                            progressHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.Quality));
-                            if (ImGui.IsItemHovered())
-                                ImGuiUtils.Tooltip($"Quality: {simState.Quality} / {simState.Input.Recipe.MaxQuality}");
+                            var progressHeight = windowHeight;
+                            if (simState.Progress >= simState.Input.Recipe.MaxProgress && simState.Input.Recipe.MaxQuality > 0)
+                            {
+                                ImGuiUtils.ArcProgress(
+                                (float)simState.Quality / simState.Input.Recipe.MaxQuality,
+                                progressHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.Quality));
+                                if (ImGui.IsItemHovered())
+                                    ImGuiUtils.Tooltip($"Quality: {simState.Quality} / {simState.Input.Recipe.MaxQuality}");
+                            }
+                            else
+                            {
+                                ImGuiUtils.ArcProgress(
+                                (float)simState.Progress / simState.Input.Recipe.MaxProgress,
+                                progressHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.Progress));
+                                if (ImGui.IsItemHovered())
+                                    ImGuiUtils.Tooltip($"Progress: {simState.Progress} / {simState.Input.Recipe.MaxProgress}");
+                            }
                         }
                         else
                         {
                             ImGuiUtils.ArcProgress(
                             (float)simState.Progress / simState.Input.Recipe.MaxProgress,
-                            progressHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.Progress));
+                                miniRowHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.Progress));
                             if (ImGui.IsItemHovered())
                                 ImGuiUtils.Tooltip($"Progress: {simState.Progress} / {simState.Input.Recipe.MaxProgress}");
+
+                            ImGui.SameLine(0, spacing);
+                            ImGuiUtils.ArcProgress(
+                            (float)simState.Quality / simState.Input.Recipe.MaxQuality,
+                                miniRowHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.Quality));
+                            if (ImGui.IsItemHovered())
+                                ImGuiUtils.Tooltip($"Quality: {simState.Quality} / {simState.Input.Recipe.MaxQuality}");
+                            ImGuiUtils.ArcProgress((float)simState.Durability / simState.Input.Recipe.MaxDurability,
+                            miniRowHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.Durability));
+                            if (ImGui.IsItemHovered())
+                                ImGuiUtils.Tooltip($"Remaining Durability: {simState.Durability} / {simState.Input.Recipe.MaxDurability}");
+
+                            ImGui.SameLine(0, spacing);
+                            ImGuiUtils.ArcProgress(
+                            (float)simState.CP / simState.Input.Stats.CP,
+                                miniRowHeight / 2f,
+                                .5f,
+                                ImGui.GetColorU32(ImGuiCol.TableBorderLight),
+                                ImGui.GetColorU32(Colors.CP));
+                            if (ImGui.IsItemHovered())
+                                ImGuiUtils.Tooltip($"Remaining CP: {simState.CP} / {simState.Input.Stats.CP}");
                         }
                     }
-                    else
+
+                    ImGui.TableNextColumn();
                     {
-                        ImGuiUtils.ArcProgress(
-                        (float)simState.Progress / simState.Input.Recipe.MaxProgress,
-                            miniRowHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.Progress));
+                        if (ImGuiUtils.IconButtonSquare(FontAwesomeIcon.Edit, miniRowHeight))
+                            Service.Plugin.OpenMacroEditor(CharacterStats!, RecipeData!, new(Service.ClientState.LocalPlayer!.StatusList), CalculateIngredientHqCounts(), actions, state.MacroEditorSetter);
                         if (ImGui.IsItemHovered())
-                            ImGuiUtils.Tooltip($"Progress: {simState.Progress} / {simState.Input.Recipe.MaxProgress}");
-
-                        ImGui.SameLine(0, spacing);
-                        ImGuiUtils.ArcProgress(
-                        (float)simState.Quality / simState.Input.Recipe.MaxQuality,
-                            miniRowHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.Quality));
+                            ImGuiUtils.Tooltip("Open in Macro Editor");
+                        if (ImGuiUtils.IconButtonSquare(FontAwesomeIcon.Paste, miniRowHeight))
+                            MacroCopy.Copy(actions);
                         if (ImGui.IsItemHovered())
-                            ImGuiUtils.Tooltip($"Quality: {simState.Quality} / {simState.Input.Recipe.MaxQuality}");
-                        ImGuiUtils.ArcProgress((float)simState.Durability / simState.Input.Recipe.MaxDurability,
-                        miniRowHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.Durability));
-                        if (ImGui.IsItemHovered())
-                            ImGuiUtils.Tooltip($"Remaining Durability: {simState.Durability} / {simState.Input.Recipe.MaxDurability}");
-
-                        ImGui.SameLine(0, spacing);
-                        ImGuiUtils.ArcProgress(
-                        (float)simState.CP / simState.Input.Stats.CP,
-                            miniRowHeight / 2f,
-                            .5f,
-                            ImGui.GetColorU32(ImGuiCol.TableBorderLight),
-                            ImGui.GetColorU32(Colors.CP));
-                        if (ImGui.IsItemHovered())
-                            ImGuiUtils.Tooltip($"Remaining CP: {simState.CP} / {simState.Input.Stats.CP}");
+                            ImGuiUtils.Tooltip("Copy to Clipboard");
                     }
-                }
 
-                ImGui.TableNextColumn();
-                {
-                    if (ImGuiUtils.IconButtonSquare(FontAwesomeIcon.Edit, miniRowHeight))
-                        Service.Plugin.OpenMacroEditor(CharacterStats!, RecipeData!, new(Service.ClientState.LocalPlayer!.StatusList), CalculateIngredientHqCounts(), actions, state.MacroEditorSetter);
-                    if (ImGui.IsItemHovered())
-                        ImGuiUtils.Tooltip("Open in Macro Editor");
-                    if (ImGuiUtils.IconButtonSquare(FontAwesomeIcon.Paste, miniRowHeight))
-                        MacroCopy.Copy(actions);
-                    if (ImGui.IsItemHovered())
-                        ImGuiUtils.Tooltip("Copy to Clipboard");
-                }
-
-                ImGui.TableNextColumn();
-                {
-                    var itemsPerRow = (int)MathF.Floor((ImGui.GetContentRegionAvail().X - stepsAvailWidthOffset + spacing) / (miniRowHeight + spacing));
-                    var itemCount = actions.Count;
-                    for (var i = 0; i < itemsPerRow * 2; i++)
+                    ImGui.TableNextColumn();
                     {
-                        if (i % itemsPerRow != 0)
-                            ImGui.SameLine(0, spacing);
-                        if (i < itemCount)
+                        var itemsPerRow = (int)MathF.Floor((ImGui.GetContentRegionAvail().X - stepsAvailWidthOffset + spacing) / (miniRowHeight + spacing));
+                        var itemCount = actions.Count;
+                        for (var i = 0; i < itemsPerRow * 2; i++)
                         {
-                            var shouldShowMore = i + 1 == itemsPerRow * 2 && i + 1 < itemCount;
-                            if (!shouldShowMore)
+                            if (i % itemsPerRow != 0)
+                                ImGui.SameLine(0, spacing);
+                            if (i < itemCount)
                             {
-                                ImGui.Image(actions[i].GetIcon(RecipeData!.ClassJob).ImGuiHandle, new(miniRowHeight));
-                                if (ImGui.IsItemHovered())
-                                    ImGuiUtils.Tooltip(actions[i].GetName(RecipeData!.ClassJob));
+                                var shouldShowMore = i + 1 == itemsPerRow * 2 && i + 1 < itemCount;
+                                if (!shouldShowMore)
+                                {
+                                    ImGui.Image(actions[i].GetIcon(RecipeData!.ClassJob).ImGuiHandle, new(miniRowHeight));
+                                    if (ImGui.IsItemHovered())
+                                        ImGuiUtils.Tooltip(actions[i].GetName(RecipeData!.ClassJob));
+                                }
+                                else
+                                {
+                                    var amtMore = itemCount - itemsPerRow * 2;
+                                    var pos = ImGui.GetCursorPos();
+                                    ImGui.Image(actions[i].GetIcon(RecipeData!.ClassJob).ImGuiHandle, new(miniRowHeight), default, Vector2.One, new(1, 1, 1, .5f));
+                                    if (ImGui.IsItemHovered())
+                                        ImGuiUtils.Tooltip($"{actions[i].GetName(RecipeData!.ClassJob)}\nand {amtMore} more");
+                                    ImGui.SetCursorPos(pos);
+                                    ImGui.GetWindowDrawList().AddRectFilled(ImGui.GetCursorScreenPos(), ImGui.GetCursorScreenPos() + new Vector2(miniRowHeight), ImGui.GetColorU32(ImGuiCol.FrameBg), miniRowHeight / 8f);
+                                    ImGui.GetWindowDrawList().AddTextClippedEx(ImGui.GetCursorScreenPos(), ImGui.GetCursorScreenPos() + new Vector2(miniRowHeight), $"+{amtMore}", null, new(.5f), null);
+                                }
                             }
                             else
-                            {
-                                var amtMore = itemCount - itemsPerRow * 2;
-                                var pos = ImGui.GetCursorPos();
-                                ImGui.Image(actions[i].GetIcon(RecipeData!.ClassJob).ImGuiHandle, new(miniRowHeight), default, Vector2.One, new(1, 1, 1, .5f));
-                                if (ImGui.IsItemHovered())
-                                    ImGuiUtils.Tooltip($"{actions[i].GetName(RecipeData!.ClassJob)}\nand {amtMore} more");
-                                ImGui.SetCursorPos(pos);
-                                ImGui.GetWindowDrawList().AddRectFilled(ImGui.GetCursorScreenPos(), ImGui.GetCursorScreenPos() + new Vector2(miniRowHeight), ImGui.GetColorU32(ImGuiCol.FrameBg), miniRowHeight / 8f);
-                                ImGui.GetWindowDrawList().AddTextClippedEx(ImGui.GetCursorScreenPos(), ImGui.GetCursorScreenPos() + new Vector2(miniRowHeight), $"+{amtMore}", null, new(.5f), null);
-                            }
+                                ImGui.Dummy(new(miniRowHeight));
                         }
-                        else
-                            ImGui.Dummy(new(miniRowHeight));
                     }
                 }
+            }
+            
+            if (state.Type == MacroTaskType.Suggested)
+            {
+                if (ImGui.Button("Re-Generate"))
+                    CalculateSuggestedMacro();
             }
         }
     }

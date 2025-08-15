@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using ActionType = Craftimizer.Simulator.Actions.ActionType;
 using Sim = Craftimizer.Simulator.Simulator;
@@ -43,8 +44,8 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     public RecipeData? RecipeData { get; private set; }
     public CharacterStats? CharacterStats { get; private set; }
     public SimulationInput? SimulationInput { get; private set; }
-    public ActionType? NextAction => (ShouldOpen && Macro.Count > 0) ? Macro[0].Action : null;
-    public bool ShouldDrawAnts => ShouldOpen && !IsCollapsed;
+    public ActionType? NextAction => (UsingSolver && Macro.Count > 0) ? Macro[0].Action : null;
+    public bool ShouldDrawAnts => UsingSolver && !IsCollapsed;
 
     private int CurrentActionCount { get; set; }
     private ActionStates CurrentActionStates { get; set; }
@@ -64,6 +65,14 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     private SimulatedMacro Macro { get; } = new();
 
     private BackgroundTask<int>? SolverTask { get; set; }
+
+    private bool hasWaited = false;
+    private BackgroundTask<bool> WaitTask { get; } = new(_ =>
+    {
+        Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.NextInt64(100, 250))).Wait();
+        return true;
+    });
+    
     private bool SolverRunning => (!SolverTask?.Completed) ?? false;
     private Solver.Solver? SolverObject { get; set; }
 
@@ -107,21 +116,26 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     }
 
     private bool IsCollapsed { get; set; }
-    private bool ShouldOpen { get; set; }
+    private bool UsingSolver { get; set; }
+    private int SuggestedMacroStep { get; set; }
+    private bool UsingSuggestedMacro { get; set; }
 
     private bool WasOpen { get; set; }
     private bool WasCollapsed { get; set; }
 
-    private bool ShouldCalculate => !IsCollapsed && ShouldOpen;
+    private bool ShouldCalculate => !IsCollapsed && UsingSolver;
     private bool WasCalculatable { get; set; }
 
     private bool IsRecalculateQueued { get; set; }
+    
+    private bool wasInCraftAction;
 
     public override void Update()
     {
         base.Update();
-
-        ShouldOpen = CalculateShouldOpen();
+        
+        UsingSuggestedMacro = CalculateIsUsingSuggestedMacro();
+        UsingSolver = CalculateShouldOpen() && !UsingSuggestedMacro;
 
         if (ShouldCalculate != WasCalculatable)
         {
@@ -131,27 +145,26 @@ public sealed unsafe class SynthHelper : Window, IDisposable
                 RefreshCurrentState();
         }
 
-        if (Macro.Count == 0 && ShouldOpen)
+        if (Macro.Count == 0 && UsingSolver)
         {
-            if (ShouldOpen != WasOpen || IsCollapsed != WasCollapsed)
+            if (UsingSolver != WasOpen || IsCollapsed != WasCollapsed)
                 RefreshCurrentState();
         }
 
-        if (!ShouldOpen)
+        if (!UsingSolver && !UsingSuggestedMacro)
         {
             StyleAlpha = LastAlpha = null;
             LastPosition = null;
         }
 
-        WasOpen = ShouldOpen;
+        WasOpen = UsingSolver || UsingSuggestedMacro;
         WasCollapsed = IsCollapsed;
         WasCalculatable = ShouldCalculate;
     }
 
     public override bool DrawConditions() =>
-        ShouldOpen;
-
-    private bool wasInCraftAction;
+        UsingSolver || UsingSuggestedMacro;
+    
     private bool CalculateShouldOpen()
     {
         if (Service.ClientState.LocalPlayer == null)
@@ -180,6 +193,11 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         if (Addon->AtkUnitBase.WindowNode == null)
             return false;
 
+        if (RecipeData.LastRecipeEntry != null && RecipeData.LastRecipeEntry.RecipeId == recipeId && RecipeData.SuggestedMacro.HasValue && RecipeData.SuggestedMacro.Value.State.Input.Recipe.RecipeId == recipeId)
+        {
+            return false;
+        }
+        
         if (Service.Configuration.DisableSynthHelperOnMacro)
         {
             var module = RaptureShellModule.Instance();
@@ -218,6 +236,45 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         return true;
     }
 
+    private bool CalculateIsUsingSuggestedMacro()
+    {
+        if (Service.ClientState.LocalPlayer == null)
+            return false;
+
+        if (!Service.Configuration.EnableSynthHelper)
+            return false;
+
+        var recipeId = CSRecipeNote.Instance()->ActiveCraftRecipeId;
+
+        if (recipeId == 0)
+        {
+            SuggestedMacroStep = 0;
+            RecipeData = null;
+            return false;
+        }
+
+        Addon = (AddonSynthesis*)Service.GameGui.GetAddonByName("Synthesis").Address;
+
+        if (Addon == null)
+        {
+            SuggestedMacroStep = 0;
+            RecipeData = null;
+            return false;
+        }
+
+        // Check if Synthesis addon is visible
+        if (Addon->AtkUnitBase.WindowNode == null)
+            return false;
+
+        if (RecipeData.LastRecipeEntry != null && RecipeData.LastRecipeEntry.RecipeId == recipeId && RecipeData.SuggestedMacro.HasValue && RecipeData.SuggestedMacro.Value.State.Input.Recipe.RecipeId == recipeId)
+        {
+            RecipeData = new(recipeId);
+            return true;
+        }
+        
+        return false;
+    }
+    
     private Vector2? LastPosition { get; set; }
     private byte? StyleAlpha { get; set; }
     private byte? LastAlpha { get; set; }
@@ -268,18 +325,26 @@ public sealed unsafe class SynthHelper : Window, IDisposable
     {
         IsCollapsed = false;
 
-        DrawMacro();
-
-        DrawMacroInfo();
-
-        ImGuiHelpers.ScaledDummy(5);
-
-        DrawMacroActions();
-
-        if (SolverRunning && SolverObject is { } solver)
+        if (UsingSolver)
         {
+            DrawMacro();
+
+            DrawMacroInfo();
+
             ImGuiHelpers.ScaledDummy(5);
-            DynamicBars.DrawProgressBar(solver);
+
+            DrawMacroActions();
+
+            if (SolverRunning && SolverObject is { } solver)
+            {
+                ImGuiHelpers.ScaledDummy(5);
+                DynamicBars.DrawProgressBar(solver);
+            }
+        }
+
+        if (UsingSuggestedMacro)
+        {
+            DrawSuggestedMacro();
         }
     }
 
@@ -332,7 +397,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
                 isPressed = ImGuiExtras.ButtonBehavior(bb, id, out isHovered, out isHeld, ImGuiButtonFlags.None);
             }
             ImGui.ImageButton(action.GetIcon(RecipeData!.ClassJob).ImGuiHandle, new(imageSize), default, Vector2.One, 0, default, failedAction ? new(1, 1, 1, ImGui.GetStyle().DisabledAlpha) : Vector4.One);
-            if (isPressed && i == 0)
+            if ((isPressed || true) && i == 0)
             {
                 if (ExecuteNextAction())
                     break;
@@ -474,15 +539,68 @@ public sealed unsafe class SynthHelper : Window, IDisposable
             Service.Plugin.OpenMacroEditor(CharacterStats!, RecipeData!, new(Service.ClientState.LocalPlayer!.StatusList), null, [], null);
     }
 
+    private void DrawSuggestedMacro()
+    {
+        ImGui.Text("Using suggested macro...");
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
+        if (canExecute)
+        {
+            ExecuteNextMacroAction();
+        }
+    }
+    
     public bool ExecuteNextAction()
     {
         var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
         var action = NextAction;
         if (canExecute && action != null)
         {
+            if (!hasWaited)
+            {
+                hasWaited = true;
+                
+                WaitTask.Start(true);
+                
+                return false;
+            }
+
+            if (!WaitTask.Completed)
+            {
+                return false;
+            }
+            
             Chat.SendMessage($"/ac \"{action.Value.GetName(RecipeData!.ClassJob)}\"");
+            
+            hasWaited = false;
+            
             return true;
         }
+        return false;
+    }
+    
+    private bool ExecuteNextMacroAction()
+    {
+        ArgumentNullException.ThrowIfNull(RecipeData);
+        
+        if (!RecipeData.SuggestedMacro.HasValue)
+            throw new ArgumentNullException(nameof(RecipeData.SuggestedMacro));
+
+        if (SuggestedMacroStep >= RecipeData.SuggestedMacro.Value.Actions.Count)
+            return false;
+        
+        var canExecute = !Service.Condition[ConditionFlag.ExecutingCraftingAction];
+        var action = RecipeData.SuggestedMacro.Value.Actions[SuggestedMacroStep];
+        if (canExecute)
+        {
+            var actionName = action.GetName(RecipeData.ClassJob);
+            
+            Chat.SendMessage($"/ac \"{actionName}\"");
+            
+            SuggestedMacroStep++;
+            
+            return true;
+        }
+        
         return false;
     }
 
@@ -519,8 +637,10 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         }
 
         if (shouldUpdateInput)
+        {
             SimulationInput = new(CharacterStats, RecipeData.RecipeInfo);
-
+        }
+        
         CurrentActionCount = 0;
         CurrentActionStates = new();
         CurrentState = GetCurrentState();
@@ -533,7 +653,9 @@ public sealed unsafe class SynthHelper : Window, IDisposable
             return;
         if (Addon->AtkUnitBase.WindowNode == null)
             return;
-
+        if (UsingSuggestedMacro)
+            return;
+        
         (_, CurrentState) = new SimNoRandom().Execute(GetCurrentState(), action);
         CurrentActionCount = CurrentState.ActionCount;
         CurrentActionStates = CurrentState.ActionStates;
@@ -593,7 +715,7 @@ public sealed unsafe class SynthHelper : Window, IDisposable
 
     private void OnStateUpdated()
     {
-        if (!ShouldOpen || IsCollapsed)
+        if (!UsingSolver || IsCollapsed)
         {
             IsRecalculateQueued = true;
             return;

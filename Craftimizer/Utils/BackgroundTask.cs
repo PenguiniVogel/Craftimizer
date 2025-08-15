@@ -14,8 +14,11 @@ public sealed class BackgroundTask<T>(Func<CancellationToken, T> func) : IDispos
     private CancellationTokenSource TokenSource { get; } = new();
     private Func<CancellationToken, T> Func { get; } = func;
 
-    public void Start()
+    public void Start(bool restart = false)
     {
+        if (restart)
+            Completed = false;
+            
         var token = TokenSource.Token;
         var task = Task.Run(() => Result = Func(token), token);
         _ = task.ContinueWith(t => Completed = true);

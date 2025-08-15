@@ -4,19 +4,55 @@ using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Craftimizer.Solver;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using ClassJob = Craftimizer.Simulator.ClassJob;
 
 namespace Craftimizer.Utils;
 
 public sealed record RecipeData
 {
+    public sealed unsafe class CSRecipeEntryPtr(RecipeNote.RecipeEntry* recipeEntry)
+    {
+        public ushort RecipeId { get; } = recipeEntry->RecipeId;
+        public ushort Durability { get; } = recipeEntry->Durability;
+        public uint Quality { get; } = recipeEntry->Quality;
+        public ushort Difficulty { get; } = recipeEntry->Difficulty;
+        public ushort ClassJobLevel { get; } = recipeEntry->ClassJobLevel;
+        public ushort RecipeLevelTableId { get; } = recipeEntry->RecipeLevelTableId;
+    } 
+    
+    public static CSRecipeEntryPtr? LastRecipeEntry { get; set; }
+    
+    public static SolverSolution? SuggestedMacro { get; set; }
+    
     public ushort RecipeId { get; }
 
     public Recipe Recipe { get; }
     public RecipeLevelTable Table { get; }
 
     public ClassJob ClassJob { get; }
-    public RecipeInfo RecipeInfo { get; }
+    
+    private RecipeInfo? _backingRecipeInfo;
+    public RecipeInfo RecipeInfo
+    {
+        get
+        {
+            ArgumentNullException.ThrowIfNull(_backingRecipeInfo);
+            
+            if (LastRecipeEntry != null && LastRecipeEntry.RecipeId == _backingRecipeInfo.RecipeId)
+            {
+                _backingRecipeInfo = _backingRecipeInfo with { MaxDurability = LastRecipeEntry.Durability, MaxQuality = (int)LastRecipeEntry.Quality, MaxProgress = LastRecipeEntry.Difficulty };
+            }
+            
+            return _backingRecipeInfo;
+        }
+        init
+        {
+            _backingRecipeInfo = value;
+        }
+    }
+    
     public bool IsCollectable => Recipe.ItemResult.ValueNullable?.AlwaysCollectable ?? false;
     public IReadOnlyList<int?>? CollectableThresholds { get; }
     public IReadOnlyList<(Item Item, int Amount)> Ingredients { get; }
@@ -33,27 +69,44 @@ public sealed record RecipeData
 
         ClassJob = (ClassJob)Recipe.CraftType.RowId;
 
-        var resolvedLevelTableRow = Recipe.RecipeLevelTable.RowId;
-        if (/* Recipe.Unknown0 != 0 */ false) // TODO
+        if (LastRecipeEntry != null && LastRecipeEntry.RecipeId == recipeId)
         {
-            AdjustedJobLevel = Math.Min(explicitlyAdjustedJobLevel ?? ClassJob.GetWKSSyncedLevel(), /* Recipe.Unknown0 */ ushort.MaxValue); // TODO
-            resolvedLevelTableRow = 0; /* LuminaSheets.GathererCrafterLvAdjustTableSheet.GetRow(AdjustedJobLevel.Value).Unknown0; */        // TODO
+            Table = LuminaSheets.RecipeLevelTableSheet.GetRow(LastRecipeEntry.RecipeLevelTableId);
+            
+            RecipeInfo = new()
+            {
+                RecipeId = recipeId,
+                IsExpert = Recipe.IsExpert,
+                ClassJobLevel = Table.ClassJobLevel,
+                ConditionsFlag = Table.ConditionsFlag,
+                MaxDurability = LastRecipeEntry.Durability,
+                MaxQuality = (int)LastRecipeEntry.Quality,
+                MaxProgress = LastRecipeEntry.Difficulty,
+                QualityModifier = Table.QualityModifier,
+                QualityDivider = Table.QualityDivider,
+                ProgressModifier = Table.ProgressModifier,
+                ProgressDivider = Table.ProgressDivider,
+            };
         }
-        Table = LuminaSheets.RecipeLevelTableSheet.GetRow(resolvedLevelTableRow);
-
-        RecipeInfo = new()
+        else
         {
-            IsExpert = Recipe.IsExpert,
-            ClassJobLevel = Table.ClassJobLevel,
-            ConditionsFlag = Table.ConditionsFlag,
-            MaxDurability = (/* Recipe.Unknown0 != 0 */ true ? 80 : Table.Durability) * Recipe.DurabilityFactor / 100, // TODO
-            MaxQuality = (Recipe.CanHq || Recipe.IsExpert) ? (int)Table.Quality * Recipe.QualityFactor / 100 : 0,
-            MaxProgress = Table.Difficulty * Recipe.DifficultyFactor / 100,
-            QualityModifier = Table.QualityModifier,
-            QualityDivider = Table.QualityDivider,
-            ProgressModifier = Table.ProgressModifier,
-            ProgressDivider = Table.ProgressDivider,
-        };
+            Table = LuminaSheets.RecipeLevelTableSheet.GetRow(Recipe.RecipeLevelTable.RowId);
+            
+            RecipeInfo = new()
+            {
+                RecipeId = recipeId,
+                IsExpert = Recipe.IsExpert,
+                ClassJobLevel = Table.ClassJobLevel,
+                ConditionsFlag = Table.ConditionsFlag,
+                MaxDurability = Table.Durability,
+                MaxQuality = (int)Table.Quality,
+                MaxProgress = Table.Difficulty,
+                QualityModifier = Table.QualityModifier,
+                QualityDivider = Table.QualityDivider,
+                ProgressModifier = Table.ProgressModifier,
+                ProgressDivider = Table.ProgressDivider,
+            };
+        }
 
         int[]? thresholds = null;
         if (Recipe.CollectableMetadata.GetValueOrDefault<CollectablesShopRefine>() is { } row)
@@ -111,6 +164,7 @@ public sealed record RecipeData
             .Where(i => i.First.IsValid)
             .Select(i => (i.First.Value, (int)i.Second))
             .ToList();
+        
         MaxStartingQuality = (int)Math.Floor(Recipe.MaterialQualityFactor * RecipeInfo.MaxQuality / 100f);
 
         TotalHqILvls = (int)Ingredients.Where(i => i.Item.CanBeHq).Sum(i => i.Item.LevelItem.RowId * i.Amount);

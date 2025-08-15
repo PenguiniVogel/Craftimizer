@@ -2,6 +2,7 @@ namespace Craftimizer.Simulator;
 
 public sealed record RecipeInfo
 {
+    public ushort RecipeId { get; init; }
     public bool IsExpert { get; init; }
     public int ClassJobLevel { get; init; }
     public ushort ConditionsFlag { get; init; }
