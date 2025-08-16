@@ -432,9 +432,9 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
         if (CraftStatus != CraftableStatus.OK)
             return;
-
+        
         ImGui.Separator();
-
+        
         var panelWidth = availWidth - ImGui.GetStyle().ItemSpacing.X * 2;
 
         {
@@ -460,6 +460,10 @@ public sealed unsafe class RecipeNote : Window, IDisposable
             if (SuggestedMacroTask?.Completed ?? false)
             {
                 RecipeData.SuggestedMacro = macroTaskResult;
+            }
+            else
+            {
+                RecipeData.SuggestedMacro = null;
             }
             
             var state = new MacroTaskState()
@@ -499,6 +503,12 @@ public sealed unsafe class RecipeNote : Window, IDisposable
 
         if (ImGui.Button("Open in Macro Editor", new(availWidth, 0)))
             Service.Plugin.OpenMacroEditor(CharacterStats!, RecipeData!, new(Service.ClientState.LocalPlayer!.StatusList), CalculateIngredientHqCounts(), [], null);
+
+        if (ImGui.Button("Reset", new(availWidth, 0)))
+        {
+            RecipeData = null;
+            StatsChanged = true;
+        }
     }
 
     private void DrawCharacterStats()
@@ -776,46 +786,48 @@ public sealed unsafe class RecipeNote : Window, IDisposable
         }
 
         ImGui.Separator();
-
-        using var table = ImRaii.Table("recipeStats", 2);
-        if (table)
+        
+        using (var table = ImRaii.Table("recipeStats", 2))
         {
-            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 100 * ImGuiHelpers.GlobalScale);
-            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthStretch);
-
-            if (RecipeData.LastRecipeEntry != null)
+            if (table)
             {
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Progress");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Difficulty}");
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 100 * ImGuiHelpers.GlobalScale);
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthStretch);
 
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Quality");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Quality}");
+                if (RecipeData.LastRecipeEntry != null)
+                {
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Progress");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Difficulty}");
 
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Durability");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Durability}");
-            }
-            else
-            {
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Progress");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxProgress}");
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Quality");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Quality}");
 
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Quality");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxQuality}");
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Durability");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.LastRecipeEntry.Durability}");
+                }
+                else
+                {
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Progress");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxProgress}");
 
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted("Durability");
-                ImGui.TableNextColumn();
-                ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxDurability}");
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Quality");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxQuality}");
+
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted("Durability");
+                    ImGui.TableNextColumn();
+                    ImGuiUtils.TextRight($"{RecipeData.RecipeInfo.MaxDurability}");
+                }
             }
         }
     }

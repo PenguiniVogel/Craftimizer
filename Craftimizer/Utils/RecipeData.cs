@@ -69,8 +69,15 @@ public sealed record RecipeData
 
         ClassJob = (ClassJob)Recipe.CraftType.RowId;
 
+        Table = LuminaSheets.RecipeLevelTableSheet.GetRow(Recipe.RecipeLevelTable.RowId);
+        
         if (LastRecipeEntry != null && LastRecipeEntry.RecipeId == recipeId)
         {
+            /* I don't really care about an icon
+            if (Table.ClassJobLevel != LastRecipeEntry.ClassJobLevel || (explicitlyAdjustedJobLevel != null && Table.ClassJobLevel != explicitlyAdjustedJobLevel))
+                AdjustedJobLevel = explicitlyAdjustedJobLevel ?? LastRecipeEntry.ClassJobLevel;
+            */
+            
             Table = LuminaSheets.RecipeLevelTableSheet.GetRow(LastRecipeEntry.RecipeLevelTableId);
             
             RecipeInfo = new()
@@ -90,8 +97,6 @@ public sealed record RecipeData
         }
         else
         {
-            Table = LuminaSheets.RecipeLevelTableSheet.GetRow(Recipe.RecipeLevelTable.RowId);
-            
             RecipeInfo = new()
             {
                 RecipeId = recipeId,

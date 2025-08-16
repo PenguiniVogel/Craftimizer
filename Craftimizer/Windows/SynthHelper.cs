@@ -592,11 +592,25 @@ public sealed unsafe class SynthHelper : Window, IDisposable
         var action = RecipeData.SuggestedMacro.Value.Actions[SuggestedMacroStep];
         if (canExecute)
         {
-            var actionName = action.GetName(RecipeData.ClassJob);
+            if (!hasWaited)
+            {
+                hasWaited = true;
+                
+                WaitTask.Start(true);
+                
+                return false;
+            }
+
+            if (!WaitTask.Completed)
+            {
+                return false;
+            }
             
-            Chat.SendMessage($"/ac \"{actionName}\"");
+            Chat.SendMessage($"/ac \"{action.GetName(RecipeData.ClassJob)}\"");
             
             SuggestedMacroStep++;
+            
+            hasWaited = false;
             
             return true;
         }
